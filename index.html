@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>R-Race: Cartoon Driver</title>
+    <style>
+        :root { --road: #34495e; --grass: #2ecc71; --line: #ecf0f1; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Arial Rounded MT Bold', sans-serif; }
+        body { background: var(--grass); overflow: hidden; }
+        
+        #game-container { position: relative; width: 100vw; height: 100vh; background: var(--road); border-left: 15px solid var(--grass); border-right: 15px solid var(--grass); }
+        
+        /* Road lines */
+        .line { position: absolute; width: 10px; height: 80px; background: var(--line); left: 50%; transform: translateX(-50%); animation: moveLines 1s linear infinite; }
+        @keyframes moveLines { from { top: -100px; } to { top: 100vh; } }
+
+        /* Car Styles */
+        #player { position: absolute; bottom: 50px; width: 60px; height: 100px; font-size: 60px; display: flex; align-items: center; justify-content: center; transition: left 0.1s ease-out; z-index: 10; }
+        .enemy { position: absolute; width: 60px; height: 100px; font-size: 60px; display: flex; align-items: center; justify-content: center; transform: rotate(180deg); }
+        .coin { position: absolute; font-size: 35px; z-index: 5; }
+
+        /* UI */
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; text-shadow: 2px 2px #000; z-index: 100; }
+        #menu { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; color: white; }
+        .btn { background: #f1c40f; border: none; padding: 15px 40px; border-radius: 30px; font-size: 20px; font-weight: bold; color: #2c3e50; cursor: pointer; box-shadow: 0 6px 0 #d4ac0d; margin-top: 20px; }
+        .btn:active { transform: translateY(3px); box-shadow: 0 3px 0 #d4ac0d; }
+    </style>
+</head>
+<body>
+
+<div id="ui">RC: <span id="score">0</span></div>
+
+<div id="menu">
+    <h1 style="font-size: 50px; color: #f1c40f;">R-RACE</h1>
+    <p>Mashinani boshqarish uchun ekranning <br> chap yoki o'ng tomonini bosing!</p>
+    <button class="btn" onclick="startGame()">START RACE</button>
+</div>
+
+<div id="game-container">
+    <div id="player">🏎️</div>
+</div>
+
+<script>
+    const container = document.getElementById('game-container');
+    const player = document.getElementById('player');
+    const scoreEl = document.getElementById('score');
+    const menu = document.getElementById('menu');
+
+    let score = 0;
+    let gameActive = false;
+    let playerPos = window.innerWidth / 2 - 30;
+    let enemies = [];
+    let coins = [];
+
+    function startGame() {
+        menu.style.display = 'none';
+        gameActive = true;
+        score = 0;
+        scoreEl.innerText = score;
+        playerPos = window.innerWidth / 2 - 30;
+        player.style.left = playerPos + 'px';
+        createLines();
+        gameLoop();
+    }
+
+    function createLines() {
+        for(let i=0; i<5; i++) {
+            let line = document.createElement('div');
+            line.className = 'line';
+            line.style.top = (i * 200) + 'px';
+            container.appendChild(line);
+        }
+    }
+
+    function spawnEnemy() {
+        if(!gameActive) return;
+        let enemy = document.createElement('div');
+        enemy.className = 'enemy';
+        enemy.innerText = ['🚗', '🚙', '🚕', '🚌', '🚛'][Math.floor(Math.random()*5)];
+        enemy.style.left = Math.random() * (window.innerWidth - 80) + 10 + 'px';
+        enemy.style.top = '-120px';
+        container.appendChild(enemy);
+        enemies.push(enemy);
+        
+        setTimeout(() => { if(gameActive) spawnEnemy(); }, 1500);
+    }
+
+    function spawnCoin() {
+        if(!gameActive) return;
+        let coin = document.createElement('div');
+        coin.className = 'coin';
+        coin.innerText = '💰';
+        coin.style.left = Math.random() * (window.innerWidth - 60) + 10 + 'px';
+        coin.style.top = '-50px';
+        container.appendChild(coin);
+        coins.push(coin);
+        
+        setTimeout(() => { if(gameActive) spawnCoin(); }, 2000);
+    }
+
+    function gameLoop() {
+        if(!gameActive) return;
+
+        // Move Enemies
+        enemies.forEach((en, index) => {
+            let top = parseInt(en.style.top);
+            en.style.top = (top + 5) + 'px';
+
+            // Collision Check
+            if (checkCollision(player, en)) gameOver();
+
+            if (top > window.innerHeight) {
+                en.remove();
+                enemies.splice(index, 1);
+            }
+        });
+
+        // Move Coins
+        coins.forEach((c, index) => {
+            let top = parseInt(c.style.top);
+            c.style.top = (top + 4) + 'px';
+
+            if (checkCollision(player, c)) {
+                score += 10;
+                scoreEl.innerText = score;
+                c.remove();
+                coins.splice(index, 1);
+            }
+
+            if (top > window.innerHeight) {
+                c.remove();
+                coins.splice(index, 1);
+            }
+        });
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function checkCollision(a, b) {
+        let aRect = a.getBoundingClientRect();
+        let bRect = b.getBoundingClientRect();
+        return !(aRect.top > bRect.bottom || aRect.bottom < bRect.top || aRect.right < bRect.left || aRect.left > bRect.right);
+    }
+
+    function gameOver() {
+        gameActive = false;
+        alert("GAME OVER! Yakuniy RC: " + score);
+        location.reload();
+    }
+
+    window.addEventListener('touchstart', (e) => {
+        if(!gameActive) return;
+        if(e.touches[0].clientX < window.innerWidth / 2) {
+            playerPos -= 40;
+        } else {
+            playerPos += 40;
+        }
+        if(playerPos < 20) playerPos = 20;
+        if(playerPos > window.innerWidth - 80) playerPos = window.innerWidth - 80;
+        player.style.left = playerPos + 'px';
+    });
+
+    spawnEnemy();
+    spawnCoin();
+</script>
+</body>
+</html>
