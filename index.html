@@ -3,168 +3,147 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>R-Runner: Color Shift</title>
+    <title>R-Drive: Space Highway</title>
     <style>
-        :root { --red: #ff4757; --blue: #2f3542; --neon-blue: #70a1ff; --bg: #1e272e; }
-        body { margin: 0; overflow: hidden; background: var(--bg); color: white; font-family: 'Arial Black', sans-serif; touch-action: none; }
+        :root { --neon-blue: #00f3ff; --neon-pink: #ff00ff; --bg: #020205; }
+        body { margin: 0; overflow: hidden; background: var(--bg); color: white; font-family: 'Orbitron', sans-serif; touch-action: none; }
         
-        #game-view { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
-        
-        /* HUD */
         #hud { position: fixed; top: 20px; width: 100%; display: flex; justify-content: space-around; z-index: 100; pointer-events: none; }
-        .stat { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 15px; border: 2px solid white; }
+        .stat { background: rgba(0, 243, 255, 0.1); padding: 10px 20px; border: 1px solid var(--neon-blue); border-radius: 5px; box-shadow: 0 0 15px rgba(0,243,255,0.3); }
 
-        /* Character */
-        #runner { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 40px; border: 4px solid white; transition: background 0.2s, left 0.1s; z-index: 50; }
-        .runner-red { background: var(--red); box-shadow: 0 0 20px var(--red); }
-        .runner-blue { background: var(--neon-blue); box-shadow: 0 0 20px var(--neon-blue); }
+        canvas { display: block; }
 
-        /* Obstacles */
-        .gate { position: absolute; top: -100px; width: 100%; height: 40px; display: flex; z-index: 40; }
-        .gate-half { width: 50%; height: 100%; }
-
-        /* Controls */
-        #controls { position: fixed; bottom: 40px; width: 100%; display: flex; justify-content: space-around; z-index: 200; }
-        .btn { width: 100px; height: 100px; border-radius: 20px; border: 3px solid white; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
-        #btn-move { background: rgba(255,255,255,0.1); }
-        #btn-shift { background: linear-gradient(45deg, var(--red), var(--neon-blue)); }
-
-        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; text-align: center; }
-        button { padding: 15px 50px; font-size: 22px; background: white; border: none; color: black; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 20px; }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; text-align: center; }
+        button { padding: 15px 50px; font-size: 20px; background: var(--neon-blue); border: none; color: black; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 25px; box-shadow: 0 0 20px var(--neon-blue); }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div class="stat">SCORE: <span id="score">0</span></div>
-    <div class="stat">RC: <span id="rc">0</span></div>
-</div>
-
-<div id="game-view">
-    <div id="runner" class="runner-red">🏃</div>
-</div>
-
-<div id="controls">
-    <div class="btn" id="btn-move"><b>↔️</b>MOVE</div>
-    <div class="btn" id="btn-shift"><b>♻️</b>SHIFT</div>
+    <div class="stat">SPEED: <span id="speed">0</span> KM/H</div>
+    <div class="stat">DISTANCE: <span id="dist">0</span>M</div>
 </div>
 
 <div id="start-screen" class="overlay">
-    <h1 style="font-size: 45px;">COLOR SHIFT RUNNER</h1>
-    <p>1. Tap MOVE to switch lanes<br>2. Tap SHIFT to change color<br>3. Match the gate color to pass!</p>
-    <button onclick="initGame()">START RUN</button>
+    <h1 style="color: var(--neon-blue); font-size: 40px; margin:0;">R-DRIVE</h1>
+    <p style="opacity: 0.8;">SPACE HIGHWAY PATROL</p>
+    <p>Drag Left/Right to steer.<br>Avoid other ships and obstacles!</p>
+    <button onclick="startRace()">IGNITION</button>
 </div>
 
+<canvas id="raceCanvas"></canvas>
+
 <script>
-    let score = 0, rc = 0;
-    let gameActive = false;
-    let isRed = true;
-    let isLeft = true;
-    const runner = document.getElementById('runner');
-    const view = document.getElementById('game-view');
+    const canvas = document.getElementById('raceCanvas');
+    const ctx = canvas.getContext('2d');
+    let gameActive = false, distance = 0, currentSpeed = 0;
+    
+    const player = { x: 0, y: 0, w: 40, h: 70 };
+    let enemies = [];
+    let particles = [];
+
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    // --- CYBER MUSIC SYSTEM ---
-    function playMusic() {
+    function playEngine(f, v) {
         if(!gameActive) return;
-        const notes = [110, 146, 164, 110, 196]; // Synth-wave sequence
-        notes.forEach((freq, i) => {
-            setTimeout(() => {
-                if(!gameActive) return;
-                let osc = audioCtx.createOscillator();
-                let gain = audioCtx.createGain();
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
-            }, i * 400);
-        });
-        setTimeout(playMusic, notes.length * 400);
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = f;
+        osc.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(v, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
     }
 
-    function playEffect(f, type) {
-        let osc = audioCtx.createOscillator();
-        let gain = audioCtx.createGain();
-        osc.type = type; osc.frequency.value = f;
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+    function init() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        player.x = canvas.width / 2 - 20;
+        player.y = canvas.height - 120;
+        
+        // Stars background
+        for(let i=0; i<50; i++) {
+            particles.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*5 + 2 });
+        }
     }
 
-    // Controls
-    document.getElementById('btn-move').onpointerdown = () => {
-        if(!gameActive) return;
-        isLeft = !isLeft;
-        runner.style.left = isLeft ? '25%' : '75%';
-        playEffect(400, 'sine');
-    };
-
-    document.getElementById('btn-shift').onpointerdown = () => {
-        if(!gameActive) return;
-        isRed = !isRed;
-        runner.className = isRed ? 'runner-red' : 'runner-blue';
-        playEffect(800, 'sine');
-    };
-
-    function initGame() {
+    function startRace() {
         document.getElementById('start-screen').style.display = 'none';
         gameActive = true;
         if(audioCtx.state === 'suspended') audioCtx.resume();
-        playMusic();
-        spawnGate();
-        updateScore();
+        init();
+        spawnEnemy();
+        update();
     }
 
-    function spawnGate() {
+    function spawnEnemy() {
         if(!gameActive) return;
-        const gate = document.createElement('div');
-        gate.className = 'gate';
-        
-        const leftRed = Math.random() > 0.5;
-        gate.innerHTML = `
-            <div class="gate-half" style="background:${leftRed ? '#ff4757' : '#70a1ff'}"></div>
-            <div class="gate-half" style="background:${leftRed ? '#70a1ff' : '#ff4757'}"></div>
-        `;
-        view.appendChild(gate);
-
-        let pos = -100;
-        const move = setInterval(() => {
-            if(!gameActive) { clearInterval(move); gate.remove(); return; }
-            pos += (5 + score/500);
-            gate.style.top = pos + 'px';
-
-            // Collision check
-            if(pos > (window.innerHeight - 210) && pos < (window.innerHeight - 150)) {
-                const wallIsRed = isLeft ? leftRed : !leftRed;
-                if(isRed !== wallIsRed) {
-                    endGame();
-                }
-            }
-
-            if(pos > window.innerHeight) {
-                score += 10;
-                rc += 2;
-                updateScore();
-                clearInterval(move);
-                gate.remove();
-            }
-        }, 20);
-
-        setTimeout(spawnGate, 2000 - (score > 1500 ? 500 : score/4));
+        enemies.push({ 
+            x: Math.random() * (canvas.width - 40), 
+            y: -100, 
+            w: 40, 
+            h: 70, 
+            color: Math.random() > 0.5 ? '#ff00ff' : '#00ff00' 
+        });
+        setTimeout(spawnEnemy, Math.max(300, 1000 - distance/100));
     }
 
-    function updateScore() {
-        document.getElementById('score').innerText = score;
-        document.getElementById('rc').innerText = rc;
+    window.onpointermove = (e) => {
+        if(!gameActive) return;
+        player.x = e.clientX - 20;
+    };
+
+    function update() {
+        if(!gameActive) return;
+
+        ctx.fillStyle = '#020205';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Move and draw Stars
+        ctx.fillStyle = "white";
+        particles.forEach(p => {
+            p.y += p.s + (currentSpeed/10);
+            if(p.y > canvas.height) p.y = 0;
+            ctx.fillRect(p.x, p.y, 2, p.s);
+        });
+
+        // Speed Logic
+        if(currentSpeed < 320) currentSpeed += 0.5;
+        distance += Math.floor(currentSpeed / 10);
+        document.getElementById('speed').innerText = Math.floor(currentSpeed);
+        document.getElementById('dist').innerText = distance;
+        playEngine(60 + currentSpeed/5, 0.02);
+
+        // Draw Player Ship (Neon)
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#00f3ff';
+        ctx.fillStyle = '#00f3ff';
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+        ctx.fillStyle = 'white';
+        ctx.fillRect(player.x + 5, player.y + 10, 30, 15); // Cockpit
+
+        // Enemies
+        enemies.forEach((en, i) => {
+            en.y += 8 + (currentSpeed/20);
+            ctx.shadowColor = en.color;
+            ctx.fillStyle = en.color;
+            ctx.fillRect(en.x, en.y, en.w, en.h);
+
+            // Collision
+            if(player.x < en.x + en.w && player.x + player.w > en.x &&
+               player.y < en.y + en.h && player.y + player.h > en.y) {
+                gameOver();
+            }
+
+            if(en.y > canvas.height) enemies.splice(i, 1);
+        });
+
+        requestAnimationFrame(update);
     }
 
-    function endGame() {
+    function gameOver() {
         gameActive = false;
-        playEffect(100, 'sawtooth');
-        alert("CRASHED! Wrong Color.\nFinal Score: " + score);
+        alert("CRASHED! Distance: " + distance + "m");
         location.reload();
     }
 </script>
