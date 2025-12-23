@@ -1,168 +1,172 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>R-Race: Cartoon Driver</title>
+    <title>R-Runner: Color Shift</title>
     <style>
-        :root { --road: #34495e; --grass: #2ecc71; --line: #ecf0f1; }
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Arial Rounded MT Bold', sans-serif; }
-        body { background: var(--grass); overflow: hidden; }
+        :root { --red: #ff4757; --blue: #2f3542; --neon-blue: #70a1ff; --bg: #1e272e; }
+        body { margin: 0; overflow: hidden; background: var(--bg); color: white; font-family: 'Arial Black', sans-serif; touch-action: none; }
         
-        #game-container { position: relative; width: 100vw; height: 100vh; background: var(--road); border-left: 15px solid var(--grass); border-right: 15px solid var(--grass); }
+        #game-view { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
         
-        /* Road lines */
-        .line { position: absolute; width: 10px; height: 80px; background: var(--line); left: 50%; transform: translateX(-50%); animation: moveLines 1s linear infinite; }
-        @keyframes moveLines { from { top: -100px; } to { top: 100vh; } }
+        /* HUD */
+        #hud { position: fixed; top: 20px; width: 100%; display: flex; justify-content: space-around; z-index: 100; pointer-events: none; }
+        .stat { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 15px; border: 2px solid white; }
 
-        /* Car Styles */
-        #player { position: absolute; bottom: 50px; width: 60px; height: 100px; font-size: 60px; display: flex; align-items: center; justify-content: center; transition: left 0.1s ease-out; z-index: 10; }
-        .enemy { position: absolute; width: 60px; height: 100px; font-size: 60px; display: flex; align-items: center; justify-content: center; transform: rotate(180deg); }
-        .coin { position: absolute; font-size: 35px; z-index: 5; }
+        /* Character */
+        #runner { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 40px; border: 4px solid white; transition: background 0.2s, left 0.1s; z-index: 50; }
+        .runner-red { background: var(--red); box-shadow: 0 0 20px var(--red); }
+        .runner-blue { background: var(--neon-blue); box-shadow: 0 0 20px var(--neon-blue); }
 
-        /* UI */
-        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; text-shadow: 2px 2px #000; z-index: 100; }
-        #menu { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; color: white; }
-        .btn { background: #f1c40f; border: none; padding: 15px 40px; border-radius: 30px; font-size: 20px; font-weight: bold; color: #2c3e50; cursor: pointer; box-shadow: 0 6px 0 #d4ac0d; margin-top: 20px; }
-        .btn:active { transform: translateY(3px); box-shadow: 0 3px 0 #d4ac0d; }
+        /* Obstacles */
+        .gate { position: absolute; top: -100px; width: 100%; height: 40px; display: flex; z-index: 40; }
+        .gate-half { width: 50%; height: 100%; }
+
+        /* Controls */
+        #controls { position: fixed; bottom: 40px; width: 100%; display: flex; justify-content: space-around; z-index: 200; }
+        .btn { width: 100px; height: 100px; border-radius: 20px; border: 3px solid white; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
+        #btn-move { background: rgba(255,255,255,0.1); }
+        #btn-shift { background: linear-gradient(45deg, var(--red), var(--neon-blue)); }
+
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; text-align: center; }
+        button { padding: 15px 50px; font-size: 22px; background: white; border: none; color: black; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-<div id="ui">RC: <span id="score">0</span></div>
-
-<div id="menu">
-    <h1 style="font-size: 50px; color: #f1c40f;">R-RACE</h1>
-    <p>Mashinani boshqarish uchun ekranning <br> chap yoki o'ng tomonini bosing!</p>
-    <button class="btn" onclick="startGame()">START RACE</button>
+<div id="hud">
+    <div class="stat">SCORE: <span id="score">0</span></div>
+    <div class="stat">RC: <span id="rc">0</span></div>
 </div>
 
-<div id="game-container">
-    <div id="player">🏎️</div>
+<div id="game-view">
+    <div id="runner" class="runner-red">🏃</div>
+</div>
+
+<div id="controls">
+    <div class="btn" id="btn-move"><b>↔️</b>MOVE</div>
+    <div class="btn" id="btn-shift"><b>♻️</b>SHIFT</div>
+</div>
+
+<div id="start-screen" class="overlay">
+    <h1 style="font-size: 45px;">COLOR SHIFT RUNNER</h1>
+    <p>1. Tap MOVE to switch lanes<br>2. Tap SHIFT to change color<br>3. Match the gate color to pass!</p>
+    <button onclick="initGame()">START RUN</button>
 </div>
 
 <script>
-    const container = document.getElementById('game-container');
-    const player = document.getElementById('player');
-    const scoreEl = document.getElementById('score');
-    const menu = document.getElementById('menu');
-
-    let score = 0;
+    let score = 0, rc = 0;
     let gameActive = false;
-    let playerPos = window.innerWidth / 2 - 30;
-    let enemies = [];
-    let coins = [];
+    let isRed = true;
+    let isLeft = true;
+    const runner = document.getElementById('runner');
+    const view = document.getElementById('game-view');
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    function startGame() {
-        menu.style.display = 'none';
+    // --- CYBER MUSIC SYSTEM ---
+    function playMusic() {
+        if(!gameActive) return;
+        const notes = [110, 146, 164, 110, 196]; // Synth-wave sequence
+        notes.forEach((freq, i) => {
+            setTimeout(() => {
+                if(!gameActive) return;
+                let osc = audioCtx.createOscillator();
+                let gain = audioCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+            }, i * 400);
+        });
+        setTimeout(playMusic, notes.length * 400);
+    }
+
+    function playEffect(f, type) {
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = type; osc.frequency.value = f;
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+    }
+
+    // Controls
+    document.getElementById('btn-move').onpointerdown = () => {
+        if(!gameActive) return;
+        isLeft = !isLeft;
+        runner.style.left = isLeft ? '25%' : '75%';
+        playEffect(400, 'sine');
+    };
+
+    document.getElementById('btn-shift').onpointerdown = () => {
+        if(!gameActive) return;
+        isRed = !isRed;
+        runner.className = isRed ? 'runner-red' : 'runner-blue';
+        playEffect(800, 'sine');
+    };
+
+    function initGame() {
+        document.getElementById('start-screen').style.display = 'none';
         gameActive = true;
-        score = 0;
-        scoreEl.innerText = score;
-        playerPos = window.innerWidth / 2 - 30;
-        player.style.left = playerPos + 'px';
-        createLines();
-        gameLoop();
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        playMusic();
+        spawnGate();
+        updateScore();
     }
 
-    function createLines() {
-        for(let i=0; i<5; i++) {
-            let line = document.createElement('div');
-            line.className = 'line';
-            line.style.top = (i * 200) + 'px';
-            container.appendChild(line);
-        }
-    }
-
-    function spawnEnemy() {
+    function spawnGate() {
         if(!gameActive) return;
-        let enemy = document.createElement('div');
-        enemy.className = 'enemy';
-        enemy.innerText = ['🚗', '🚙', '🚕', '🚌', '🚛'][Math.floor(Math.random()*5)];
-        enemy.style.left = Math.random() * (window.innerWidth - 80) + 10 + 'px';
-        enemy.style.top = '-120px';
-        container.appendChild(enemy);
-        enemies.push(enemy);
+        const gate = document.createElement('div');
+        gate.className = 'gate';
         
-        setTimeout(() => { if(gameActive) spawnEnemy(); }, 1500);
-    }
+        const leftRed = Math.random() > 0.5;
+        gate.innerHTML = `
+            <div class="gate-half" style="background:${leftRed ? '#ff4757' : '#70a1ff'}"></div>
+            <div class="gate-half" style="background:${leftRed ? '#70a1ff' : '#ff4757'}"></div>
+        `;
+        view.appendChild(gate);
 
-    function spawnCoin() {
-        if(!gameActive) return;
-        let coin = document.createElement('div');
-        coin.className = 'coin';
-        coin.innerText = '💰';
-        coin.style.left = Math.random() * (window.innerWidth - 60) + 10 + 'px';
-        coin.style.top = '-50px';
-        container.appendChild(coin);
-        coins.push(coin);
-        
-        setTimeout(() => { if(gameActive) spawnCoin(); }, 2000);
-    }
+        let pos = -100;
+        const move = setInterval(() => {
+            if(!gameActive) { clearInterval(move); gate.remove(); return; }
+            pos += (5 + score/500);
+            gate.style.top = pos + 'px';
 
-    function gameLoop() {
-        if(!gameActive) return;
-
-        // Move Enemies
-        enemies.forEach((en, index) => {
-            let top = parseInt(en.style.top);
-            en.style.top = (top + 5) + 'px';
-
-            // Collision Check
-            if (checkCollision(player, en)) gameOver();
-
-            if (top > window.innerHeight) {
-                en.remove();
-                enemies.splice(index, 1);
+            // Collision check
+            if(pos > (window.innerHeight - 210) && pos < (window.innerHeight - 150)) {
+                const wallIsRed = isLeft ? leftRed : !leftRed;
+                if(isRed !== wallIsRed) {
+                    endGame();
+                }
             }
-        });
 
-        // Move Coins
-        coins.forEach((c, index) => {
-            let top = parseInt(c.style.top);
-            c.style.top = (top + 4) + 'px';
-
-            if (checkCollision(player, c)) {
+            if(pos > window.innerHeight) {
                 score += 10;
-                scoreEl.innerText = score;
-                c.remove();
-                coins.splice(index, 1);
+                rc += 2;
+                updateScore();
+                clearInterval(move);
+                gate.remove();
             }
+        }, 20);
 
-            if (top > window.innerHeight) {
-                c.remove();
-                coins.splice(index, 1);
-            }
-        });
-
-        requestAnimationFrame(gameLoop);
+        setTimeout(spawnGate, 2000 - (score > 1500 ? 500 : score/4));
     }
 
-    function checkCollision(a, b) {
-        let aRect = a.getBoundingClientRect();
-        let bRect = b.getBoundingClientRect();
-        return !(aRect.top > bRect.bottom || aRect.bottom < bRect.top || aRect.right < bRect.left || aRect.left > bRect.right);
+    function updateScore() {
+        document.getElementById('score').innerText = score;
+        document.getElementById('rc').innerText = rc;
     }
 
-    function gameOver() {
+    function endGame() {
         gameActive = false;
-        alert("GAME OVER! Yakuniy RC: " + score);
+        playEffect(100, 'sawtooth');
+        alert("CRASHED! Wrong Color.\nFinal Score: " + score);
         location.reload();
     }
-
-    window.addEventListener('touchstart', (e) => {
-        if(!gameActive) return;
-        if(e.touches[0].clientX < window.innerWidth / 2) {
-            playerPos -= 40;
-        } else {
-            playerPos += 40;
-        }
-        if(playerPos < 20) playerPos = 20;
-        if(playerPos > window.innerWidth - 80) playerPos = window.innerWidth - 80;
-        player.style.left = playerPos + 'px';
-    });
-
-    spawnEnemy();
-    spawnCoin();
 </script>
 </body>
 </html>
