@@ -3,149 +3,139 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>R-Drive: Space Highway</title>
+    <title>R-Race: Precision</title>
     <style>
-        :root { --neon-blue: #00f3ff; --neon-pink: #ff00ff; --bg: #020205; }
-        body { margin: 0; overflow: hidden; background: var(--bg); color: white; font-family: 'Orbitron', sans-serif; touch-action: none; }
-        
-        #hud { position: fixed; top: 20px; width: 100%; display: flex; justify-content: space-around; z-index: 100; pointer-events: none; }
-        .stat { background: rgba(0, 243, 255, 0.1); padding: 10px 20px; border: 1px solid var(--neon-blue); border-radius: 5px; box-shadow: 0 0 15px rgba(0,243,255,0.3); }
-
-        canvas { display: block; }
-
-        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; text-align: center; }
-        button { padding: 15px 50px; font-size: 20px; background: var(--neon-blue); border: none; color: black; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 25px; box-shadow: 0 0 20px var(--neon-blue); }
+        body { margin: 0; background: #0a0a0a; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        #ui { position: absolute; top: 20px; font-size: 24px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; }
+        canvas { background: #111; border: 4px solid #333; border-radius: 10px; max-width: 95vw; }
+        .controls { display: flex; gap: 30px; margin-top: 20px; }
+        .btn { width: 80px; height: 80px; background: #222; border: 2px solid #00ffcc; color: #00ffcc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; user-select: none; }
+        .btn:active { background: #00ffcc; color: #000; }
     </style>
 </head>
 <body>
 
-<div id="hud">
-    <div class="stat">SPEED: <span id="speed">0</span> KM/H</div>
-    <div class="stat">DISTANCE: <span id="dist">0</span>M</div>
-</div>
-
-<div id="start-screen" class="overlay">
-    <h1 style="color: var(--neon-blue); font-size: 40px; margin:0;">R-DRIVE</h1>
-    <p style="opacity: 0.8;">SPACE HIGHWAY PATROL</p>
-    <p>Drag Left/Right to steer.<br>Avoid other ships and obstacles!</p>
-    <button onclick="startRace()">IGNITION</button>
-</div>
-
+<div id="ui">SCORE: <span id="score">0</span></div>
 <canvas id="raceCanvas"></canvas>
 
-<script>
-    const canvas = document.getElementById('raceCanvas');
-    const ctx = canvas.getContext('2d');
-    let gameActive = false, distance = 0, currentSpeed = 0;
-    
-    const player = { x: 0, y: 0, w: 40, h: 70 };
-    let enemies = [];
-    let particles = [];
+<div class="controls">
+    <div class="btn" onpointerdown="move('L')">◀</div>
+    <div class="btn" onpointerdown="move('R')">▶</div>
+</div>
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playEngine(f, v) {
+<script>
+const canvas = document.getElementById('raceCanvas');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+
+canvas.width = 300; canvas.height = 500;
+
+// Yo'laklar koordinatalari
+const lanes = [50, 150, 250]; 
+let currentLane = 1; // Markaziy yo'lak
+let gameActive = true, score = 0, speed = 5, musicStarted = false;
+
+const car = { x: lanes[currentLane], y: 420, targetX: lanes[currentLane], w: 40, h: 70 };
+let enemies = [], roadLines = [];
+
+// Musiqa
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playMusic() {
+    if (musicStarted) return; musicStarted = true;
+    setInterval(() => {
         if(!gameActive) return;
         const osc = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.value = f;
-        osc.connect(g); g.connect(audioCtx.destination);
-        g.gain.setValueAtTime(v, audioCtx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-    }
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        const freqs = [110, 130, 146, 164];
+        osc.frequency.value = freqs[Math.floor(Date.now()/500)%4];
+        gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+    }, 500);
+}
 
-    function init() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        player.x = canvas.width / 2 - 20;
-        player.y = canvas.height - 120;
-        
-        // Stars background
-        for(let i=0; i<50; i++) {
-            particles.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*5 + 2 });
+function move(dir) {
+    playMusic();
+    if(dir === 'L' && currentLane > 0) currentLane--;
+    if(dir === 'R' && currentLane < 2) currentLane++;
+    car.targetX = lanes[currentLane];
+}
+
+function spawnEnemy() {
+    if(Math.random() < 0.02 + (speed/1000)) {
+        const lane = Math.floor(Math.random() * 3);
+        // Agar bu yo'lakda yaqin orada mashina bo'lmasa, yangisini qo'shish
+        if(!enemies.some(e => e.lane === lane && e.y < 100)) {
+            enemies.push({ x: lanes[lane], y: -100, lane: lane, color: '#ff3131' });
         }
     }
+}
 
-    function startRace() {
-        document.getElementById('start-screen').style.display = 'none';
-        gameActive = true;
-        if(audioCtx.state === 'suspended') audioCtx.resume();
-        init();
-        spawnEnemy();
-        update();
-    }
+function update() {
+    if(!gameActive) return;
 
-    function spawnEnemy() {
-        if(!gameActive) return;
-        enemies.push({ 
-            x: Math.random() * (canvas.width - 40), 
-            y: -100, 
-            w: 40, 
-            h: 70, 
-            color: Math.random() > 0.5 ? '#ff00ff' : '#00ff00' 
-        });
-        setTimeout(spawnEnemy, Math.max(300, 1000 - distance/100));
-    }
+    // Silliq harakat (Interpolation)
+    car.x += (car.targetX - car.x) * 0.2;
 
-    window.onpointermove = (e) => {
-        if(!gameActive) return;
-        player.x = e.clientX - 20;
-    };
+    speed += 0.001;
+    score += 1;
+    scoreEl.innerText = Math.floor(score/10);
 
-    function update() {
-        if(!gameActive) return;
+    // Yo'l chiziqlari
+    if(Math.random() > 0.9) roadLines.push({y: -50});
+    roadLines.forEach((l, i) => {
+        l.y += speed;
+        if(l.y > 600) roadLines.splice(i, 1);
+    });
 
-        ctx.fillStyle = '#020205';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    enemies.forEach((e, i) => {
+        e.y += speed;
+        
+        // Aniq to'qnashuv
+        if(Math.abs(car.x - e.x) < 35 && Math.abs(car.y - e.y) < 65) {
+            gameActive = false;
+            alert("GAME OVER! Score: " + Math.floor(score/10));
+            location.reload();
+        }
+        if(e.y > 600) enemies.splice(i, 1);
+    });
+}
 
-        // Move and draw Stars
-        ctx.fillStyle = "white";
-        particles.forEach(p => {
-            p.y += p.s + (currentSpeed/10);
-            if(p.y > canvas.height) p.y = 0;
-            ctx.fillRect(p.x, p.y, 2, p.s);
-        });
+function draw() {
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Speed Logic
-        if(currentSpeed < 320) currentSpeed += 0.5;
-        distance += Math.floor(currentSpeed / 10);
-        document.getElementById('speed').innerText = Math.floor(currentSpeed);
-        document.getElementById('dist').innerText = distance;
-        playEngine(60 + currentSpeed/5, 0.02);
+    // Yo'lak chiziqlari (Asfalt)
+    ctx.strokeStyle = '#333'; ctx.setLineDash([20, 20]);
+    ctx.beginPath(); ctx.moveTo(100, 0); ctx.lineTo(100, 500); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(200, 0); ctx.lineTo(200, 500); ctx.stroke();
 
-        // Draw Player Ship (Neon)
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#00f3ff';
-        ctx.fillStyle = '#00f3ff';
-        ctx.fillRect(player.x, player.y, player.w, player.h);
-        ctx.fillStyle = 'white';
-        ctx.fillRect(player.x + 5, player.y + 10, 30, 15); // Cockpit
+    // Harakatlanuvchi yo'l chiziqlari
+    ctx.strokeStyle = '#555'; ctx.setLineDash([]);
+    roadLines.forEach(l => {
+        ctx.strokeRect(100, l.y, 1, 30); ctx.strokeRect(200, l.y, 1, 30);
+    });
 
-        // Enemies
-        enemies.forEach((en, i) => {
-            en.y += 8 + (currentSpeed/20);
-            ctx.shadowColor = en.color;
-            ctx.fillStyle = en.color;
-            ctx.fillRect(en.x, en.y, en.w, en.h);
+    // O'yinchi mashinasi
+    ctx.shadowBlur = 15; ctx.shadowColor = '#00f3ff';
+    ctx.fillStyle = '#00f3ff';
+    ctx.beginPath(); ctx.roundRect(car.x - 20, car.y, car.w, car.h, 5); ctx.fill();
 
-            // Collision
-            if(player.x < en.x + en.w && player.x + player.w > en.x &&
-               player.y < en.y + en.h && player.y + player.h > en.y) {
-                gameOver();
-            }
+    // Dushmanlar
+    ctx.shadowColor = '#ff3131';
+    enemies.forEach(e => {
+        ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.roundRect(e.x - 20, e.y, 40, 70, 5); ctx.fill();
+    });
 
-            if(en.y > canvas.height) enemies.splice(i, 1);
-        });
+    ctx.shadowBlur = 0;
+    update();
+    spawnEnemy();
+    requestAnimationFrame(draw);
+}
 
-        requestAnimationFrame(update);
-    }
-
-    function gameOver() {
-        gameActive = false;
-        alert("CRASHED! Distance: " + distance + "m");
-        location.reload();
-    }
+draw();
 </script>
 </body>
 </html>
