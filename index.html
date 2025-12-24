@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>R-Race: Precision</title>
+    <title>R-Race: Relaxed</title>
     <style>
-        body { margin: 0; background: #0a0a0a; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-        #ui { position: absolute; top: 20px; font-size: 24px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; }
-        canvas { background: #111; border: 4px solid #333; border-radius: 10px; max-width: 95vw; }
-        .controls { display: flex; gap: 30px; margin-top: 20px; }
-        .btn { width: 80px; height: 80px; background: #222; border: 2px solid #00ffcc; color: #00ffcc; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; user-select: none; }
-        .btn:active { background: #00ffcc; color: #000; }
+        body { margin: 0; background: #050505; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        #ui { position: absolute; top: 20px; font-size: 24px; color: #00f3ff; text-shadow: 0 0 10px #00f3ff; font-weight: bold; }
+        canvas { background: #0a0a0a; border: 4px solid #1a1a1a; border-radius: 15px; box-shadow: 0 0 40px rgba(0, 243, 255, 0.1); }
+        .controls { display: flex; gap: 40px; margin-top: 25px; }
+        .btn { width: 85px; height: 85px; background: rgba(0, 243, 255, 0.1); border: 2px solid #00f3ff; color: #00f3ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 35px; user-select: none; -webkit-tap-highlight-color: transparent; }
+        .btn:active { background: #00f3ff; color: #000; transform: scale(0.95); }
     </style>
 </head>
 <body>
@@ -28,47 +28,60 @@ const canvas = document.getElementById('raceCanvas');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 
-canvas.width = 300; canvas.height = 500;
+canvas.width = 320; canvas.height = 500;
 
-// Yo'laklar koordinatalari
-const lanes = [50, 150, 250]; 
-let currentLane = 1; // Markaziy yo'lak
-let gameActive = true, score = 0, speed = 5, musicStarted = false;
+const lanes = [60, 160, 260]; 
+let currentLane = 1; 
+let gameActive = true, score = 0, speed = 4, musicStarted = false; // Tezlik 4 ga tushirildi
 
-const car = { x: lanes[currentLane], y: 420, targetX: lanes[currentLane], w: 40, h: 70 };
+const car = { x: lanes[currentLane], y: 400, targetX: lanes[currentLane], w: 42, h: 75 };
 let enemies = [], roadLines = [];
+let lastSpawnTime = [0, 0, 0];
 
-// Musiqa
+// Yoqimli Synthwave Musiqa
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function playMusic() {
+function playDeepSynth() {
     if (musicStarted) return; musicStarted = true;
-    setInterval(() => {
-        if(!gameActive) return;
+    
+    const playNote = (freq, time, duration, vol) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.type = 'square';
-        const freqs = [110, 130, 146, 164];
-        osc.frequency.value = freqs[Math.floor(Date.now()/500)%4];
-        gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+        osc.type = 'triangle'; 
+        osc.frequency.setValueAtTime(freq, time);
+        gain.gain.setValueAtTime(vol, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
         osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.4);
-    }, 500);
+        osc.start(time); osc.stop(time + duration);
+    };
+
+    setInterval(() => {
+        if(!gameActive) return;
+        let now = audioCtx.currentTime;
+        // Chill Bassline
+        const melody = [130.81, 146.83, 164.81, 196.00]; // C3, D3, E3, G3
+        playNote(melody[Math.floor(Date.now()/1000)%4], now, 0.8, 0.03);
+    }, 1000);
 }
 
 function move(dir) {
-    playMusic();
+    playDeepSynth();
     if(dir === 'L' && currentLane > 0) currentLane--;
     if(dir === 'R' && currentLane < 2) currentLane++;
     car.targetX = lanes[currentLane];
 }
 
 function spawnEnemy() {
-    if(Math.random() < 0.02 + (speed/1000)) {
-        const lane = Math.floor(Math.random() * 3);
-        // Agar bu yo'lakda yaqin orada mashina bo'lmasa, yangisini qo'shish
-        if(!enemies.some(e => e.lane === lane && e.y < 100)) {
-            enemies.push({ x: lanes[lane], y: -100, lane: lane, color: '#ff3131' });
+    const now = Date.now();
+    const laneIndex = Math.floor(Math.random() * 3);
+    
+    // MASOFA: Kamida 1800ms farq (bu juda katta joy degani)
+    if (now - lastSpawnTime[laneIndex] > 1800) {
+        let activeSameLevel = enemies.filter(e => e.y < 120).length;
+        
+        // Faqat bitta yo'lakda mashina chiqarish (yo'l doim ochiq bo'ladi)
+        if (activeSameLevel < 1 && Math.random() < 0.015) {
+            enemies.push({ x: lanes[laneIndex], y: -100, color: '#ff4d4d' });
+            lastSpawnTime[laneIndex] = now;
         }
     }
 }
@@ -76,15 +89,12 @@ function spawnEnemy() {
 function update() {
     if(!gameActive) return;
 
-    // Silliq harakat (Interpolation)
-    car.x += (car.targetX - car.x) * 0.2;
-
-    speed += 0.001;
+    car.x += (car.targetX - car.x) * 0.15; // Silliqroq burilish
+    speed += 0.0005; // Tezlanish juda sekinlashdi
     score += 1;
-    scoreEl.innerText = Math.floor(score/10);
+    scoreEl.innerText = Math.floor(score/15);
 
-    // Yo'l chiziqlari
-    if(Math.random() > 0.9) roadLines.push({y: -50});
+    if(Math.random() > 0.95) roadLines.push({y: -50});
     roadLines.forEach((l, i) => {
         l.y += speed;
         if(l.y > 600) roadLines.splice(i, 1);
@@ -93,10 +103,10 @@ function update() {
     enemies.forEach((e, i) => {
         e.y += speed;
         
-        // Aniq to'qnashuv
-        if(Math.abs(car.x - e.x) < 35 && Math.abs(car.y - e.y) < 65) {
+        // To'qnashuvni aniq tekshirish
+        if(Math.abs(car.x - e.x) < 38 && Math.abs(car.y - e.y) < 70) {
             gameActive = false;
-            alert("GAME OVER! Score: " + Math.floor(score/10));
+            alert("R-Race: Try Again! Your Score: " + Math.floor(score/15));
             location.reload();
         }
         if(e.y > 600) enemies.splice(i, 1);
@@ -104,29 +114,32 @@ function update() {
 }
 
 function draw() {
-    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Yo'lak chiziqlari (Asfalt)
-    ctx.strokeStyle = '#333'; ctx.setLineDash([20, 20]);
-    ctx.beginPath(); ctx.moveTo(100, 0); ctx.lineTo(100, 500); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(200, 0); ctx.lineTo(200, 500); ctx.stroke();
+    // Asfalt chiziqlari
+    ctx.strokeStyle = '#1a1a1a'; ctx.setLineDash([30, 30]);
+    ctx.beginPath(); ctx.moveTo(106, 0); ctx.lineTo(106, 500); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(212, 0); ctx.lineTo(212, 500); ctx.stroke();
 
-    // Harakatlanuvchi yo'l chiziqlari
-    ctx.strokeStyle = '#555'; ctx.setLineDash([]);
+    // Harakatlanuvchi neon chiziqlar
+    ctx.strokeStyle = '#00f3ff33'; ctx.setLineDash([]);
     roadLines.forEach(l => {
-        ctx.strokeRect(100, l.y, 1, 30); ctx.strokeRect(200, l.y, 1, 30);
+        ctx.strokeRect(106, l.y, 1, 40); ctx.strokeRect(212, l.y, 1, 40);
     });
 
-    // O'yinchi mashinasi
-    ctx.shadowBlur = 15; ctx.shadowColor = '#00f3ff';
+    // Ko'k mashina (Player)
+    ctx.shadowBlur = 20; ctx.shadowColor = '#00f3ff';
     ctx.fillStyle = '#00f3ff';
-    ctx.beginPath(); ctx.roundRect(car.x - 20, car.y, car.w, car.h, 5); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(car.x - 21, car.y, car.w, car.h, 8); ctx.fill();
+    // Chiroqlar
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(car.x-16, car.y+5, 8, 4); ctx.fillRect(car.x+8, car.y+5, 8, 4);
 
-    // Dushmanlar
-    ctx.shadowColor = '#ff3131';
+    // Qizil mashinalar (Enemies)
+    ctx.shadowColor = '#ff4d4d';
     enemies.forEach(e => {
         ctx.fillStyle = e.color;
-        ctx.beginPath(); ctx.roundRect(e.x - 20, e.y, 40, 70, 5); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(e.x - 20, e.y, 40, 75, 5); ctx.fill();
     });
 
     ctx.shadowBlur = 0;
