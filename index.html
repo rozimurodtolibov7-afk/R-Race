@@ -5,187 +5,126 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>R-Race: Neural Velocity</title>
     <style>
-        :root { --neon: #00f2ff; --pink: #ff007a; --bg: #020205; }
-        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Orbitron', sans-serif; color: #fff; touch-action: none; }
-        #ui { position: absolute; top: 30px; width: 100%; display: flex; justify-content: space-around; z-index: 10; pointer-events: none; }
-        .stat-box { text-align: center; }
-        .label { font-size: 10px; letter-spacing: 3px; color: var(--neon); opacity: 0.7; }
-        .value { font-size: 24px; font-weight: bold; text-shadow: 0 0 10px var(--neon); }
-        #canvas { display: block; filter: contrast(1.1) saturate(1.2); }
-        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); z-index: 100; cursor: pointer; }
-        .start-text { font-size: 20px; letter-spacing: 5px; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: #fff; touch-action: none; }
+        #ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; pointer-events: none; z-index: 10; }
+        .stat { text-align: center; text-transform: uppercase; letter-spacing: 2px; }
+        .val { font-size: 24px; font-weight: bold; color: #00f2ff; }
+        canvas { display: block; }
+        #msg { position: absolute; top: 50%; width: 100%; text-align: center; font-size: 18px; opacity: 0.5; pointer-events: none; }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<div id="overlay" onclick="startRace()">
-    <div class="start-text">TAP TO INITIALIZE NEURAL LINK</div>
-</div>
-
 <div id="ui">
-    <div class="stat-box"><div class="label">NEURAL SYNC</div><div id="sync" class="value">0%</div></div>
-    <div class="stat-box"><div class="label">VELOCITY</div><div id="speed" class="value">0</div></div>
+    <div class="stat">Focus<br><span id="score" class="val">0</span></div>
+    <div class="stat">Velocity<br><span id="speed" class="val">0</span></div>
 </div>
-
+<div id="msg">MOVE TO START</div>
 <canvas id="canvas"></canvas>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let gameActive = false;
-let score = 0;
-let speed = 0;
-let targetSpeed = 5;
-let playerX = 0;
-let obstacles = [];
-let particles = [];
-
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- High-End Audio System ---
+let score = 0, speed = 4, gameActive = false, playerX = canvas.width / 2;
+let obstacles = [];
+
+// Audio System
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let masterGain = audioCtx.createGain();
-masterGain.connect(audioCtx.destination);
-
-function playEngineSound() {
-    const osc = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(40, audioCtx.currentTime);
-    osc.connect(g);
-    g.connect(masterGain);
-    g.gain.setValueAtTime(0.02, audioCtx.currentTime);
-    osc.start();
-    
-    // Dynamic engine pitch based on speed
-    setInterval(() => {
-        osc.frequency.exponentialRampToValueAtTime(40 + (speed * 10), audioCtx.currentTime + 0.1);
-    }, 100);
-}
-
-function playCollectSound() {
+function playSound(f, type = 'sine') {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(800 + (score * 10), audioCtx.currentTime);
-    o.connect(g); g.connect(masterGain);
+    o.type = type; o.frequency.value = f;
+    o.connect(g); g.connect(audioCtx.destination);
     g.gain.setValueAtTime(0.1, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-    o.start(); o.stop(audioCtx.currentTime + 0.5);
-}
-
-// --- Game Logic ---
-function startRace() {
-    if(gameActive) return;
-    document.getElementById('overlay').style.display = 'none';
-    gameActive = true;
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-    playEngineSound();
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    o.start(); o.stop(audioCtx.currentTime + 0.3);
 }
 
 class Obstacle {
     constructor() {
-        this.w = 40 + Math.random() * 60;
-        this.h = 10;
-        this.x = (Math.random() * (canvas.width - this.w));
+        this.r = 15 + Math.random() * 20;
+        this.x = Math.random() * (canvas.width - this.r * 2) + this.r;
         this.y = -50;
-        this.color = Math.random() > 0.5 ? '#00f2ff' : '#ff007a';
+        this.type = Math.random() > 0.4 ? 'bad' : 'good'; // Red is obstacle, Green is boost
+        this.color = this.type === 'bad' ? '#ff3e3e' : '#00ff88';
     }
     update() {
         this.y += speed;
-        if(this.y > canvas.height) {
-            this.toDelete = true;
-            score += 1;
-        }
-        // Collision Detection
-        if(this.y > canvas.height - 120 && this.y < canvas.height - 80) {
-            if(playerX + canvas.width/2 > this.x && playerX + canvas.width/2 < this.x + this.w) {
-                if(this.color === '#ff007a') gameOver(); // Pink is danger
-                else { // Cyan is boost
-                    this.toDelete = true;
-                    targetSpeed += 0.5;
-                    playCollectSound();
-                }
+        // Collision Detection (Matematik aniq)
+        const dx = this.x - playerX;
+        const dy = this.y - (canvas.height - 100);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < this.r + 20) {
+            if (this.type === 'bad') gameOver();
+            else {
+                score += 10;
+                this.y = canvas.height + 100; // Remove
+                speed += 0.2;
+                playSound(600);
             }
         }
     }
     draw() {
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 15; ctx.shadowColor = this.color;
         ctx.fillStyle = this.color;
-        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
     }
-}
-
-function gameOver() {
-    gameActive = false;
-    alert("NEURAL OVERLOAD\nScore: " + score + "\nYour imagination reached " + Math.floor(speed * 20) + " Mbps");
-    location.reload();
-}
-
-// Control
-window.addEventListener('pointermove', (e) => {
-    playerX = e.clientX - canvas.width/2;
-});
-
-function update() {
-    if(!gameActive) return;
-
-    speed += (targetSpeed - speed) * 0.01;
-    document.getElementById('speed').innerText = Math.floor(speed * 20);
-    document.getElementById('sync').innerText = Math.min(100, Math.floor(score/2)) + "%";
-
-    if(Math.random() < 0.05) obstacles.push(new Obstacle());
-
-    obstacles.forEach((ob, i) => {
-        ob.update();
-        if(ob.toDelete) obstacles.splice(i, 1);
-    });
 }
 
 function draw() {
-    // Cyber Horizon Gradient
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, '#020205');
-    grad.addColorStop(1, '#0a0a20');
-    ctx.fillStyle = grad;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Speed Lines (Visual Imagination boost)
-    ctx.strokeStyle = 'rgba(0, 242, 255, 0.1)';
-    for(let i=0; i<10; i++) {
-        let x = (canvas.width / 10) * i;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
+    // Track lines (Visual illusion of speed)
+    ctx.strokeStyle = '#111';
+    for(let i=0; i<5; i++) {
+        let lx = (canvas.width / 5) * i;
+        ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, canvas.height); ctx.stroke();
     }
 
-    // Draw Obstacles
-    obstacles.forEach(ob => ob.draw());
+    // Player (Ego Core)
+    ctx.shadowBlur = 20; ctx.shadowColor = '#00f2ff';
+    ctx.fillStyle = '#00f2ff';
+    ctx.beginPath(); ctx.arc(playerX, canvas.height - 100, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
 
-    // Draw Player (The "Ego" Sphere)
-    ctx.save();
-    ctx.translate(canvas.width/2 + playerX, canvas.height - 100);
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = '#fff';
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(0, 0, 15, 0, Math.PI*2);
-    ctx.fill();
-    
-    // Aura
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    ctx.beginPath();
-    ctx.arc(0, 0, 25 + Math.sin(Date.now()/100)*5, 0, Math.PI*2);
-    ctx.stroke();
-    ctx.restore();
+    if (gameActive) {
+        if (Math.random() < 0.03) obstacles.push(new Obstacle());
+        obstacles.forEach((ob, i) => {
+            ob.update();
+            ob.draw();
+            if (ob.y > canvas.height) {
+                if(ob.y < canvas.height + 50) score++;
+                obstacles.splice(i, 1);
+            }
+        });
+        document.getElementById('score').innerText = score;
+        document.getElementById('speed').innerText = Math.floor(speed * 10);
+    }
 
-    update();
     requestAnimationFrame(draw);
+}
+
+window.addEventListener('pointermove', (e) => {
+    playerX = e.clientX;
+    if (!gameActive) {
+        gameActive = true;
+        document.getElementById('msg').style.display = 'none';
+        playSound(440);
+    }
+});
+
+function gameOver() {
+    gameActive = false;
+    playSound(100, 'sawtooth');
+    alert("NEURAL DISCONNECT\nYour Mind Velocity: " + Math.floor(speed * 10) + "\nTotal Focus: " + score);
+    location.reload();
 }
 
 draw();
