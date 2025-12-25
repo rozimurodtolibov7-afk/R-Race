@@ -3,148 +3,188 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>R-Race: Relaxed</title>
+    <title>R-Race: Neural Velocity</title>
     <style>
-        body { margin: 0; background: #050505; color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-        #ui { position: absolute; top: 20px; font-size: 24px; color: #00f3ff; text-shadow: 0 0 10px #00f3ff; font-weight: bold; }
-        canvas { background: #0a0a0a; border: 4px solid #1a1a1a; border-radius: 15px; box-shadow: 0 0 40px rgba(0, 243, 255, 0.1); }
-        .controls { display: flex; gap: 40px; margin-top: 25px; }
-        .btn { width: 85px; height: 85px; background: rgba(0, 243, 255, 0.1); border: 2px solid #00f3ff; color: #00f3ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 35px; user-select: none; -webkit-tap-highlight-color: transparent; }
-        .btn:active { background: #00f3ff; color: #000; transform: scale(0.95); }
+        :root { --neon: #00f2ff; --pink: #ff007a; --bg: #020205; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Orbitron', sans-serif; color: #fff; touch-action: none; }
+        #ui { position: absolute; top: 30px; width: 100%; display: flex; justify-content: space-around; z-index: 10; pointer-events: none; }
+        .stat-box { text-align: center; }
+        .label { font-size: 10px; letter-spacing: 3px; color: var(--neon); opacity: 0.7; }
+        .value { font-size: 24px; font-weight: bold; text-shadow: 0 0 10px var(--neon); }
+        #canvas { display: block; filter: contrast(1.1) saturate(1.2); }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); z-index: 100; cursor: pointer; }
+        .start-text { font-size: 20px; letter-spacing: 5px; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
     </style>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<div id="ui">SCORE: <span id="score">0</span></div>
-<canvas id="raceCanvas"></canvas>
-
-<div class="controls">
-    <div class="btn" onpointerdown="move('L')">◀</div>
-    <div class="btn" onpointerdown="move('R')">▶</div>
+<div id="overlay" onclick="startRace()">
+    <div class="start-text">TAP TO INITIALIZE NEURAL LINK</div>
 </div>
 
+<div id="ui">
+    <div class="stat-box"><div class="label">NEURAL SYNC</div><div id="sync" class="value">0%</div></div>
+    <div class="stat-box"><div class="label">VELOCITY</div><div id="speed" class="value">0</div></div>
+</div>
+
+<canvas id="canvas"></canvas>
+
 <script>
-const canvas = document.getElementById('raceCanvas');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const scoreEl = document.getElementById('score');
+let gameActive = false;
+let score = 0;
+let speed = 0;
+let targetSpeed = 5;
+let playerX = 0;
+let obstacles = [];
+let particles = [];
 
-canvas.width = 320; canvas.height = 500;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-const lanes = [60, 160, 260]; 
-let currentLane = 1; 
-let gameActive = true, score = 0, speed = 4, musicStarted = false; // Tezlik 4 ga tushirildi
-
-const car = { x: lanes[currentLane], y: 400, targetX: lanes[currentLane], w: 42, h: 75 };
-let enemies = [], roadLines = [];
-let lastSpawnTime = [0, 0, 0];
-
-// Yoqimli Synthwave Musiqa
+// --- High-End Audio System ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function playDeepSynth() {
-    if (musicStarted) return; musicStarted = true;
-    
-    const playNote = (freq, time, duration, vol) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'triangle'; 
-        osc.frequency.setValueAtTime(freq, time);
-        gain.gain.setValueAtTime(vol, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(time); osc.stop(time + duration);
-    };
+let masterGain = audioCtx.createGain();
+masterGain.connect(audioCtx.destination);
 
+function playEngineSound() {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(40, audioCtx.currentTime);
+    osc.connect(g);
+    g.connect(masterGain);
+    g.gain.setValueAtTime(0.02, audioCtx.currentTime);
+    osc.start();
+    
+    // Dynamic engine pitch based on speed
     setInterval(() => {
-        if(!gameActive) return;
-        let now = audioCtx.currentTime;
-        // Chill Bassline
-        const melody = [130.81, 146.83, 164.81, 196.00]; // C3, D3, E3, G3
-        playNote(melody[Math.floor(Date.now()/1000)%4], now, 0.8, 0.03);
-    }, 1000);
+        osc.frequency.exponentialRampToValueAtTime(40 + (speed * 10), audioCtx.currentTime + 0.1);
+    }, 100);
 }
 
-function move(dir) {
-    playDeepSynth();
-    if(dir === 'L' && currentLane > 0) currentLane--;
-    if(dir === 'R' && currentLane < 2) currentLane++;
-    car.targetX = lanes[currentLane];
+function playCollectSound() {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(800 + (score * 10), audioCtx.currentTime);
+    o.connect(g); g.connect(masterGain);
+    g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+    o.start(); o.stop(audioCtx.currentTime + 0.5);
 }
 
-function spawnEnemy() {
-    const now = Date.now();
-    const laneIndex = Math.floor(Math.random() * 3);
-    
-    // MASOFA: Kamida 1800ms farq (bu juda katta joy degani)
-    if (now - lastSpawnTime[laneIndex] > 1800) {
-        let activeSameLevel = enemies.filter(e => e.y < 120).length;
-        
-        // Faqat bitta yo'lakda mashina chiqarish (yo'l doim ochiq bo'ladi)
-        if (activeSameLevel < 1 && Math.random() < 0.015) {
-            enemies.push({ x: lanes[laneIndex], y: -100, color: '#ff4d4d' });
-            lastSpawnTime[laneIndex] = now;
+// --- Game Logic ---
+function startRace() {
+    if(gameActive) return;
+    document.getElementById('overlay').style.display = 'none';
+    gameActive = true;
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    playEngineSound();
+}
+
+class Obstacle {
+    constructor() {
+        this.w = 40 + Math.random() * 60;
+        this.h = 10;
+        this.x = (Math.random() * (canvas.width - this.w));
+        this.y = -50;
+        this.color = Math.random() > 0.5 ? '#00f2ff' : '#ff007a';
+    }
+    update() {
+        this.y += speed;
+        if(this.y > canvas.height) {
+            this.toDelete = true;
+            score += 1;
+        }
+        // Collision Detection
+        if(this.y > canvas.height - 120 && this.y < canvas.height - 80) {
+            if(playerX + canvas.width/2 > this.x && playerX + canvas.width/2 < this.x + this.w) {
+                if(this.color === '#ff007a') gameOver(); // Pink is danger
+                else { // Cyan is boost
+                    this.toDelete = true;
+                    targetSpeed += 0.5;
+                    playCollectSound();
+                }
+            }
         }
     }
+    draw() {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+    }
 }
+
+function gameOver() {
+    gameActive = false;
+    alert("NEURAL OVERLOAD\nScore: " + score + "\nYour imagination reached " + Math.floor(speed * 20) + " Mbps");
+    location.reload();
+}
+
+// Control
+window.addEventListener('pointermove', (e) => {
+    playerX = e.clientX - canvas.width/2;
+});
 
 function update() {
     if(!gameActive) return;
 
-    car.x += (car.targetX - car.x) * 0.15; // Silliqroq burilish
-    speed += 0.0005; // Tezlanish juda sekinlashdi
-    score += 1;
-    scoreEl.innerText = Math.floor(score/15);
+    speed += (targetSpeed - speed) * 0.01;
+    document.getElementById('speed').innerText = Math.floor(speed * 20);
+    document.getElementById('sync').innerText = Math.min(100, Math.floor(score/2)) + "%";
 
-    if(Math.random() > 0.95) roadLines.push({y: -50});
-    roadLines.forEach((l, i) => {
-        l.y += speed;
-        if(l.y > 600) roadLines.splice(i, 1);
-    });
+    if(Math.random() < 0.05) obstacles.push(new Obstacle());
 
-    enemies.forEach((e, i) => {
-        e.y += speed;
-        
-        // To'qnashuvni aniq tekshirish
-        if(Math.abs(car.x - e.x) < 38 && Math.abs(car.y - e.y) < 70) {
-            gameActive = false;
-            alert("R-Race: Try Again! Your Score: " + Math.floor(score/15));
-            location.reload();
-        }
-        if(e.y > 600) enemies.splice(i, 1);
+    obstacles.forEach((ob, i) => {
+        ob.update();
+        if(ob.toDelete) obstacles.splice(i, 1);
     });
 }
 
 function draw() {
-    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Cyber Horizon Gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, '#020205');
+    grad.addColorStop(1, '#0a0a20');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Asfalt chiziqlari
-    ctx.strokeStyle = '#1a1a1a'; ctx.setLineDash([30, 30]);
-    ctx.beginPath(); ctx.moveTo(106, 0); ctx.lineTo(106, 500); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(212, 0); ctx.lineTo(212, 500); ctx.stroke();
+    // Speed Lines (Visual Imagination boost)
+    ctx.strokeStyle = 'rgba(0, 242, 255, 0.1)';
+    for(let i=0; i<10; i++) {
+        let x = (canvas.width / 10) * i;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+    }
 
-    // Harakatlanuvchi neon chiziqlar
-    ctx.strokeStyle = '#00f3ff33'; ctx.setLineDash([]);
-    roadLines.forEach(l => {
-        ctx.strokeRect(106, l.y, 1, 40); ctx.strokeRect(212, l.y, 1, 40);
-    });
+    // Draw Obstacles
+    obstacles.forEach(ob => ob.draw());
 
-    // Ko'k mashina (Player)
-    ctx.shadowBlur = 20; ctx.shadowColor = '#00f3ff';
-    ctx.fillStyle = '#00f3ff';
-    ctx.beginPath(); ctx.roundRect(car.x - 21, car.y, car.w, car.h, 8); ctx.fill();
-    // Chiroqlar
+    // Draw Player (The "Ego" Sphere)
+    ctx.save();
+    ctx.translate(canvas.width/2 + playerX, canvas.height - 100);
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#fff';
     ctx.fillStyle = '#fff';
-    ctx.fillRect(car.x-16, car.y+5, 8, 4); ctx.fillRect(car.x+8, car.y+5, 8, 4);
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI*2);
+    ctx.fill();
+    
+    // Aura
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 25 + Math.sin(Date.now()/100)*5, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
 
-    // Qizil mashinalar (Enemies)
-    ctx.shadowColor = '#ff4d4d';
-    enemies.forEach(e => {
-        ctx.fillStyle = e.color;
-        ctx.beginPath(); ctx.roundRect(e.x - 20, e.y, 40, 75, 5); ctx.fill();
-    });
-
-    ctx.shadowBlur = 0;
     update();
-    spawnEnemy();
     requestAnimationFrame(draw);
 }
 
